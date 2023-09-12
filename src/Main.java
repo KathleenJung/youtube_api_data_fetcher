@@ -1,3 +1,10 @@
+import Entity.Channel;
+import Entity.Video;
+import org.json.simple.JSONArray;
+import org.json.simple.JSONObject;
+import org.json.simple.parser.JSONParser;
+import org.json.simple.parser.ParseException;
+
 import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URI;
@@ -15,8 +22,67 @@ public class Main {
 
         for (String s:keywords) {
             String response = getConnection("search", s);
-            System.out.println(response);
+            parseData(response);
         }
+    }
+
+    private static void parseData(String jsonData) throws ClassCastException {
+        try {
+            JSONParser parser = new JSONParser();
+            JSONObject jsonObject = (JSONObject) parser.parse(jsonData);
+            JSONArray dataArray = (JSONArray) jsonObject.get("items");
+
+            for (Object obj:dataArray) {
+                JSONObject item = (JSONObject) obj;
+                JSONObject ids = (JSONObject) item.get("id");
+                System.out.println(ids);
+
+                JSONObject snippet = (JSONObject) item.get("snippet");
+
+                Video video = parseVideoData((String) ids.get("videoId"));
+                video.setVideoId((String) ids.get("videoId"));
+
+                Channel channel = parseChannelData((String) snippet.get("channelId"));
+                channel.setChannelId((String) snippet.get("channelId"));
+                channel.setChannelTitle((String) snippet.get("channelTitle"));
+            }
+        } catch (ParseException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private static Channel parseChannelData(String channelId) throws ParseException {
+        Channel channel = new Channel();
+
+        JSONParser parser = new JSONParser();
+        String channelInfo = getConnection("channels", channelId);
+
+        JSONObject cJsonObject = (JSONObject) parser.parse(channelInfo);
+        JSONArray cJsonArray = (JSONArray) cJsonObject.get("items");
+        JSONObject cValue = (JSONObject) cJsonArray.get(0);
+        JSONObject cStatistics = (JSONObject) cValue.get("statistics");
+        channel.setViewCount(Integer.parseInt((String) cStatistics.get("viewCount")));
+        channel.setSubscriberCount(Integer.parseInt((String) cStatistics.get("subscriberCount")));
+        channel.setVideoCount(Integer.parseInt((String) cStatistics.get("videoCount")));
+
+        return channel;
+    }
+
+    private static Video parseVideoData(String videoId) throws ParseException {
+        Video video = new Video();
+
+        JSONParser parser = new JSONParser();
+        String videoInfo = getConnection("videos", videoId);
+
+        JSONObject vJsonObject = (JSONObject) parser.parse(videoInfo);
+        JSONArray vDataArray = (JSONArray) vJsonObject.get("items");
+        JSONObject vValue = (JSONObject) vDataArray.get(0);
+        JSONObject vStatistics = (JSONObject) vValue.get("statistics");
+        video.setViewCount(Integer.parseInt((String)vStatistics.get("viewCount")));
+        video.setLikeCount(Integer.parseInt((String)vStatistics.get("likeCount")));
+        video.setCommentCount(Integer.parseInt((String)vStatistics.get("commentCount")));
+
+        return video;
     }
 
     public static String getApiKey() {
@@ -53,7 +119,7 @@ public class Main {
             String queryString = "key=" + getApiKey();
 
             switch (type) {
-                case "search" -> queryString += "&part=snippet&maxResults=50" + "&q=" + param;
+                case "search" -> queryString += "&part=snippet&maxResults=50&order=viewCount" + "&q=" + param;
                 case "videos", "channels" -> queryString += "&part=snippet,statistics" + "&id=" + param;
                 default -> throw new IllegalArgumentException("타입 재지정 필요");
             }
@@ -82,6 +148,7 @@ public class Main {
                 }
 
                 conn.disconnect();
+                System.out.println(sb);
                 return sb.toString();
             } else {
                 conn.disconnect();
