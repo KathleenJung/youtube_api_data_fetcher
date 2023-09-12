@@ -4,15 +4,19 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Properties;
 
 public class Main {
     private static final String PROPERTIES_FILE_PATH = "config/application.properties";
     public static void main(String[] args) {
-        System.out.println("Hello world!");
+        List<String> keywords = readKeywordsFromFile("config/keywords.txt");
 
-        String response = getConnection("search", "카페추천");
-        System.out.println(response);
+        for (String s:keywords) {
+            String response = getConnection("search", s);
+            System.out.println(response);
+        }
     }
 
     public static String getApiKey() {
@@ -27,15 +31,30 @@ public class Main {
         }
     }
 
+    public static List<String> readKeywordsFromFile(String filePath) {
+        try {
+            List<String> keywords = new ArrayList<>();
+            BufferedReader br = new BufferedReader(new FileReader(filePath));
+            String line;
+            while ((line = br.readLine()) != null) {
+                keywords.add(line);
+            }
+            br.close();
+            return keywords;
+        } catch (IOException e) {
+            e.printStackTrace();
+            throw new RuntimeException("키워드 파일 읽기 오류: " + e.getMessage(), e);
+        }
+    }
+
     public static String getConnection(String type, String param) {
         try {
             URI uri;
             String queryString = "key=" + getApiKey();
 
             switch (type) {
-                case "search" -> queryString += "&part=snippet" + "&q=" + param;
-                case "videos" -> queryString += "&part=snippet,statistics" + "&id=" + param;
-                case "channels" -> queryString += "&part=snippet,statistics" + "&id=" + param;
+                case "search" -> queryString += "&part=snippet&maxResults=50" + "&q=" + param;
+                case "videos", "channels" -> queryString += "&part=snippet,statistics" + "&id=" + param;
                 default -> throw new IllegalArgumentException("타입 재지정 필요");
             }
 
