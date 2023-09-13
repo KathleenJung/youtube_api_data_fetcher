@@ -4,9 +4,10 @@ import lombok.Data;
 
 @Data
 public class Channel {
-    private String channelId;
-    private String channelTitle;
-    private int subscriberCount;
-    private int viewCount;
-    private int videoCount;
+    private String id;
+    private String title;
+    private String description;
+    private Long subscriberCount;
+    private Long viewCount;
+    private Long videoCount;
 }

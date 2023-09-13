@@ -4,8 +4,8 @@ import lombok.Data;
 
 @Data
 public class Video {
-    private String videoId;
-    private int viewCount;
-    private int likeCount;
-    private int commentCount;
+    private String id;
+    private Long viewCount;
+    private Long likeCount;
+    private Long commentCount;
 }

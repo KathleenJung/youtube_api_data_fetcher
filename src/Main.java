@@ -17,36 +17,84 @@ import java.util.Properties;
 
 public class Main {
     private static final String PROPERTIES_FILE_PATH = "config/application.properties";
-    public static void main(String[] args) {
-        List<String> keywords = readKeywordsFromFile("config/keywords.txt");
+    private static final String OUT_FILE_PATH = "config/data.csv";
 
-        for (String s:keywords) {
-            String response = getConnection("search", s);
-            parseData(response);
+    private static List<String> apiKeys = new ArrayList<>();
+    private static int currentApiKeyIndex = 0;
+
+    private static File file;
+
+    private static BufferedWriter bw;
+
+    static {
+        try (FileInputStream input = new FileInputStream(PROPERTIES_FILE_PATH)) {
+            Properties properties = new Properties();
+            properties.load(input);
+
+            int apiKeyIndex = 1;
+            String apiKey;
+            while ((apiKey = properties.getProperty("api_key" + apiKeyIndex)) != null) {
+                apiKeys.add(apiKey);
+                apiKeyIndex++;
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+            throw new RuntimeException("API 키를 가져올 수 없습니다.", e);
         }
     }
 
-    private static void parseData(String jsonData) throws ClassCastException {
+    public static void main(String[] args) throws IOException {
+        List<String> keywords = readKeywordsFromFile("config/keywords.txt");
+
+        file = new File(OUT_FILE_PATH);
+        bw = new BufferedWriter(new FileWriter(file, StandardCharsets.UTF_8));
+
+        bw.write("ID,키워드,채널명,채널ID,채널정보,조회수,구독자수,영상수,VIEW,LIKE,COMMENT" + System.lineSeparator());
+
+        for (String s : keywords) {
+            String response = getConnection("search", s);
+            parseData(s, response);
+        }
+        bw.close();
+    }
+
+    private static void parseData(String keyword, String jsonData) throws ClassCastException {
+
         try {
             JSONParser parser = new JSONParser();
             JSONObject jsonObject = (JSONObject) parser.parse(jsonData);
             JSONArray dataArray = (JSONArray) jsonObject.get("items");
 
-            for (Object obj:dataArray) {
+            Video video;
+            Channel channel;
+
+            for (Object obj : dataArray) {
                 JSONObject item = (JSONObject) obj;
                 JSONObject ids = (JSONObject) item.get("id");
                 System.out.println(ids);
 
                 JSONObject snippet = (JSONObject) item.get("snippet");
 
-                Video video = parseVideoData((String) ids.get("videoId"));
-                video.setVideoId((String) ids.get("videoId"));
+                if(ids.get("videoId") == null) {
+                    break;
+                }
+                video = parseVideoData((String) ids.get("videoId"));
+                video.setId((String) ids.get("videoId"));
 
-                Channel channel = parseChannelData((String) snippet.get("channelId"));
-                channel.setChannelId((String) snippet.get("channelId"));
-                channel.setChannelTitle((String) snippet.get("channelTitle"));
+                channel = parseChannelData((String) snippet.get("channelId"));
+                channel.setId((String) snippet.get("channelId"));
+                channel.setTitle(((String) snippet.get("channelTitle")).replace(","," ").replaceAll("\\s+", " "));
+
+                bw.write(video.getId() + "," + keyword + ","
+                        + channel.getTitle() + "," + channel.getId() + "," + channel.getDescription() + ","
+                        + channel.getViewCount() + "," + channel.getSubscriberCount() + "," + channel.getVideoCount() + ","
+                        + video.getViewCount() + "," + video.getLikeCount() + "," + video.getCommentCount() + System.lineSeparator());
+                bw.flush();
             }
+
         } catch (ParseException e) {
+            throw new RuntimeException(e);
+        } catch (IOException e) {
             throw new RuntimeException(e);
         }
     }
@@ -60,10 +108,21 @@ public class Main {
         JSONObject cJsonObject = (JSONObject) parser.parse(channelInfo);
         JSONArray cJsonArray = (JSONArray) cJsonObject.get("items");
         JSONObject cValue = (JSONObject) cJsonArray.get(0);
+        JSONObject cSnnipet = (JSONObject) cValue.get("snippet");
         JSONObject cStatistics = (JSONObject) cValue.get("statistics");
-        channel.setViewCount(Integer.parseInt((String) cStatistics.get("viewCount")));
-        channel.setSubscriberCount(Integer.parseInt((String) cStatistics.get("subscriberCount")));
-        channel.setVideoCount(Integer.parseInt((String) cStatistics.get("videoCount")));
+
+        if (cSnnipet.get("description") != null) {
+            channel.setDescription(((String) cSnnipet.get("description")).replace("\n", " ").replace(","," ").replaceAll("\\s+", " "));
+        }
+        if (cStatistics.get("viewCount") != null) {
+            channel.setViewCount(Long.parseLong((String) cStatistics.get("viewCount")));
+        }
+        if (cStatistics.get("subscriberCount") != null) {
+            channel.setSubscriberCount(Long.parseLong((String) cStatistics.get("subscriberCount")));
+        }
+        if (cStatistics.get("videoCount") != null) {
+            channel.setVideoCount(Long.parseLong((String) cStatistics.get("videoCount")));
+        }
 
         return channel;
     }
@@ -78,22 +137,25 @@ public class Main {
         JSONArray vDataArray = (JSONArray) vJsonObject.get("items");
         JSONObject vValue = (JSONObject) vDataArray.get(0);
         JSONObject vStatistics = (JSONObject) vValue.get("statistics");
-        video.setViewCount(Integer.parseInt((String)vStatistics.get("viewCount")));
-        video.setLikeCount(Integer.parseInt((String)vStatistics.get("likeCount")));
-        video.setCommentCount(Integer.parseInt((String)vStatistics.get("commentCount")));
+
+        if (vStatistics.get("viewCount") != null) {
+            video.setViewCount(Long.parseLong((String) vStatistics.get("viewCount")));
+        }
+        if (vStatistics.get("likeCount") != null) {
+            video.setLikeCount(Long.parseLong((String) vStatistics.get("likeCount")));
+        }
+        if (vStatistics.get("commentCount") != null) {
+            video.setCommentCount(Long.parseLong((String) vStatistics.get("commentCount")));
+        }
 
         return video;
     }
 
-    public static String getApiKey() {
-        Properties properties = new Properties();
-
-        try (FileInputStream input = new FileInputStream(PROPERTIES_FILE_PATH)) {
-            properties.load(input);
-            return properties.getProperty("api_key");
-        } catch (IOException e) {
-            e.printStackTrace();
-            throw new RuntimeException("API 키를 가져올 수 없습니다.", e);
+    public static String getNextApiKey() {
+        if (currentApiKeyIndex < apiKeys.size()) {
+            return apiKeys.get(currentApiKeyIndex++);
+        } else {
+            throw new RuntimeException("더 이상 사용 가능한 API 키가 없습니다.");
         }
     }
 
@@ -116,7 +178,7 @@ public class Main {
     public static String getConnection(String type, String param) {
         try {
             URI uri;
-            String queryString = "key=" + getApiKey();
+            String queryString = "key=" + apiKeys.get(currentApiKeyIndex);
 
             switch (type) {
                 case "search" -> queryString += "&part=snippet&maxResults=50&order=viewCount" + "&q=" + param;
@@ -150,6 +212,10 @@ public class Main {
                 conn.disconnect();
                 System.out.println(sb);
                 return sb.toString();
+            } else if (responseCode == 403) {
+                System.out.println("[Failed] API Key 일일 호출 횟수 초과 - Response Code : " + responseCode);
+                getNextApiKey();
+                return getConnection(type, param);
             } else {
                 conn.disconnect();
                 throw new RuntimeException("[Failed] 요청 실패 - Response Code : " + responseCode);
